@@ -254,7 +254,8 @@ function renderLanc(){
   const used = {};
   Object.keys(cs).forEach(id => { if(cs[id] && cs[id].pos) used[cs[id].pos] = (used[cs[id].pos]||0)+1; });
   let h = `<div class="card"><h2>Lançar resultados</h2>
-    <div class="row"><label>Categoria:</label><select id="selCat">${CONFIG.categorias.map(c=>`<option value="${c.id}" ${c.id===curCat?'selected':''}>${esc(c.nome)}</option>`).join('')}</select></div>
+    <div class="row"><label>Categoria:</label><select id="selCat">${CONFIG.categorias.map(c=>`<option value="${c.id}" ${c.id===curCat?'selected':''}>${esc(c.nome)}</option>`).join('')}</select>
+    <button class="del" id="btnLimpar">Limpar lançamentos desta categoria</button></div>
     <div class="grid">`;
   CONFIG.equipes.forEach(t => {
     const v = cs[t.id] || {};
@@ -267,7 +268,16 @@ function renderLanc(){
   h += `</div><p class="mut">Cada colocação só pode ser usada uma vez por categoria. As alterações são salvas na hora e aparecem para todos.</p></div>`;
   $('#v-lanc').innerHTML = h;
   $('#selCat').onchange = e => { curCat = e.target.value; renderLanc(); };
+  $('#btnLimpar').onclick = limparCategoria;
   $('#v-lanc').querySelectorAll('select[data-team]').forEach(s => s.onchange = () => salvar(s.dataset.team, s.value));
+}
+
+function limparCategoria(){
+  const cat = CONFIG.categorias.find(c => c.id === curCat);
+  const n = Object.keys(state[curCat] || {}).length;
+  if(!n){ alert(`A categoria ${cat.nome} não tem lançamentos.`); return; }
+  if(!confirm(`Apagar os ${n} lançamentos da categoria ${cat.nome}?\n\nOs pontos dessa categoria saem do ranking e você terá que lançar de novo. Esta ação não pode ser desfeita (se precisar, baixe um backup antes na aba Backup).`)) return;
+  db.ref(`ranking/state/${curCat}`).remove().catch(erroEscrita);
 }
 
 function salvar(teamId, val){
