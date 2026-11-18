@@ -65,6 +65,7 @@ select,input[type=text],input[type=number],input[type=email],input[type=password
   <div id="aviso"></div>
   <div id="v-ranking"></div>
   <div id="v-lanc" class="hidden"></div>
+  <div id="v-saldos" class="hidden"></div>
   <div id="v-adj" class="hidden"></div>
   <div id="v-bkp" class="hidden"></div>
 </div>
@@ -77,9 +78,9 @@ select,input[type=text],input[type=number],input[type=email],input[type=password
 const CONFIG = {
   titulo: 'Campeonato Brasileiro CBBT 2026 — Federações',
   subtitulo: 'Ranking geral por equipes',
-  // pontos por colocação: índice 0 = 1º lugar ... índice 13 = 14º lugar
-  pontos: [100, 90, 80, 72, 65, 58, 52, 46, 40, 35, 30, 25, 20, 15],
-  pontosProvisorio: true,            // mude para false quando usar a tabela oficial
+  // Regulamento 9.2 — pontos por colocação: índice 0 = 1º lugar ... índice 13 = 14º lugar
+  pontos: [50, 46, 42, 38, 34, 31, 28, 25, 22, 20, 18, 16, 14, 12],
+  pontosProvisorio: false,           // true mostra um aviso de tabela provisória
   desempateCategoria: 'PRO',         // último critério de desempate: melhor colocação nesta categoria
   equipes: [
     {id:'CE', nome:'Ceará', sigla:'FECBT'},
@@ -117,9 +118,9 @@ const CONFIG = {
 
 /* ============ LÓGICA DE CÁLCULO (pura) ============ */
 //LOGIC-START
-function calcular(cfg, state, adj){
+function calcular(cfg, state, adj, saldos){
   const R = {};
-  cfg.equipes.forEach(t => R[t.id] = {t, base:0, adj:0, c:[0,0,0], pro:99, cats:{}});
+  cfg.equipes.forEach(t => R[t.id] = {t, base:0, adj:0, c:[0,0,0], sj:0, ss:0, sg:0, pro:99, cats:{}});
   cfg.categorias.forEach(c => {
     const cs = (state && state[c.id]) || {};
     Object.keys(cs).forEach(id => {
@@ -135,11 +136,15 @@ function calcular(cfg, state, adj){
   Object.values(adj || {}).forEach(a => {
     if(a && R[a.team]) R[a.team].adj += Number(a.pts) || 0;
   });
+  Object.keys(saldos || {}).forEach(id => {
+    const s = saldos[id];
+    if(R[id] && s){ R[id].sj = Number(s.j)||0; R[id].ss = Number(s.s)||0; R[id].sg = Number(s.g)||0; }
+  });
   const arr = Object.values(R);
   arr.forEach(r => r.total = r.base + r.adj);
-  const key = r => [-r.total, -r.c[0], -r.c[1], -r.c[2], r.pro].join('|');
+  const key = r => [-r.total, -r.c[0], -r.c[1], -r.c[2], -r.sj, -r.ss, -r.sg, r.pro].join('|');
   arr.sort((a,b) => {
-    const ka = [-a.total,-a.c[0],-a.c[1],-a.c[2],a.pro], kb = [-b.total,-b.c[0],-b.c[1],-b.c[2],b.pro];
+    const ka = [-a.total,-a.c[0],-a.c[1],-a.c[2],-a.sj,-a.ss,-a.sg,a.pro], kb = [-b.total,-b.c[0],-b.c[1],-b.c[2],-b.sj,-b.ss,-b.sg,b.pro];
     for(let i=0;i<ka.length;i++){ if(ka[i]!==kb[i]) return ka[i]-kb[i]; }
     return a.t.nome.localeCompare(b.t.nome,'pt-BR');
   });
@@ -156,7 +161,7 @@ function calcular(cfg, state, adj){
 const $ = s => document.querySelector(s);
 const esc = s => String(s==null?'':s).replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
 const teamById = id => CONFIG.equipes.find(t => t.id === id);
-let state = {}, adj = {}, user = null, curTab = 'ranking', curCat = CONFIG.categorias[0].id;
+let state = {}, adj = {}, saldos = {}, user = null, curTab = 'ranking', curCat = CONFIG.categorias[0].id;
 let db = null, auth = null;
 
 $('#titulo').textContent = CONFIG.titulo;
@@ -165,7 +170,7 @@ document.title = CONFIG.titulo;
 
 function renderTabs(){
   const tabs = [['ranking','Ranking'],['quadro','Quadro por categoria']];
-  if(user) tabs.push(['lanc','Lançamentos'],['adj','Bônus / Penalidades'],['bkp','Backup']);
+  if(user) tabs.push(['lanc','Lançamentos'],['saldos','Saldos (desempate)'],['adj','Bônus / Penalidades'],['bkp','Backup']);
   $('#tabs').innerHTML = tabs.map(([k,n]) => `<button class="tab ${curTab===k?'on':''}" data-t="${k}">${n}</button>`).join('');
   $('#tabs').querySelectorAll('button').forEach(b => b.onclick = () => { curTab = b.dataset.t; render(); });
 }
@@ -209,24 +214,25 @@ function posCell(p){
 }
 
 function renderRanking(){
-  const rk = calcular(CONFIG, state, adj);
+  const rk = calcular(CONFIG, state, adj, saldos);
   const proNome = (CONFIG.categorias.find(c=>c.id===CONFIG.desempateCategoria)||{}).nome || '';
   let h = `<div class="card"><h2>Classificação geral</h2><div class="scroll"><table><thead><tr>
-    <th>#</th><th class="l">Equipe</th><th>Pontos</th><th>Bônus/Pen.</th><th>Base</th><th>1º</th><th>2º</th><th>3º</th><th>${esc(proNome)}</th></tr></thead><tbody>`;
+    <th>#</th><th class="l">Equipe</th><th>Pontos</th><th>Bônus/Pen.</th><th>Base</th><th>1º</th><th>2º</th><th>3º</th><th>Saldo J/S/G</th><th>${esc(proNome)}</th></tr></thead><tbody>`;
   rk.forEach(r => {
+    const sal = (r.sj||r.ss||r.sg) ? `${r.sj}/${r.ss}/${r.sg}` : '–';
     const a = r.adj ? `<span class="${r.adj>0?'adjp':'adjn'}">${r.adj>0?'+':''}${r.adj}</span>` : '–';
     h += `<tr class="${r.rank===1&&r.total>0?'top1':''}"><td class="pos">${r.rank}º${r.tie?'<span class="mut">=</span>':''}</td>
       <td class="l"><b>${esc(r.t.nome)}</b> <span class="mut">${esc(r.t.sigla)}</span></td>
       <td class="pts">${r.total}</td><td>${a}</td><td>${r.base}</td>
-      <td>${r.c[0]}</td><td>${r.c[1]}</td><td>${r.c[2]}</td><td>${r.pro<99?r.pro+'º':'–'}</td></tr>`;
+      <td>${r.c[0]}</td><td>${r.c[1]}</td><td>${r.c[2]}</td><td>${sal}</td><td>${r.pro<99?r.pro+'º':'–'}</td></tr>`;
   });
   h += `</tbody></table></div>
-    <p class="mut">Desempate: mais 1º lugares, depois mais 2º, depois mais 3º, depois melhor colocação em ${esc(proNome)}. “=” indica empate total.</p></div>`;
+    <p class="mut">Desempate (Regulamento 9.3): mais títulos de 1º lugar, mais 2º, mais 3º, maior saldo de jogos, de sets e de games e, por fim, melhor resultado na ${esc(proNome)}. “=” indica empate total. Saldo J/S/G = jogos / sets / games.</p></div>`;
   $('#v-ranking').innerHTML = h;
 }
 
 function renderQuadro(){
-  const rk = calcular(CONFIG, state, adj);
+  const rk = calcular(CONFIG, state, adj, saldos);
   let h = `<div class="card"><h2>Colocação por categoria</h2><div class="scroll"><table><thead><tr><th class="l">Equipe</th>`;
   CONFIG.categorias.forEach(c => h += `<th>${esc(c.nome)}</th>`);
   h += `<th>Total</th></tr></thead><tbody>`;
@@ -234,11 +240,11 @@ function renderQuadro(){
     h += `<tr><td class="l"><b>${esc(r.t.nome)}</b></td>`;
     CONFIG.categorias.forEach(c => {
       const v = (state[c.id]||{})[r.t.id];
-      if(v && v.out) h += `<td class="mut">n/p</td>`; else h += posCell(r.cats[c.id]);
+      if(v && v.out) h += `<td class="mut">${v.wo?'W.O.':'n/p'}</td>`; else h += posCell(r.cats[c.id]);
     });
     h += `<td class="pts">${r.total}</td></tr>`;
   });
-  h += `</tbody></table></div><p class="mut">“n/p” = não participa na categoria. “–” = ainda sem resultado.</p></div>`;
+  h += `</tbody></table></div><p class="mut">“n/p” = não participa na categoria. “W.O.” = W.O. integral, não pontua (art. 6.4). “–” = ainda sem resultado.</p></div>`;
   $('#v-ranking').innerHTML = h;
 }
 
@@ -252,9 +258,9 @@ function renderLanc(){
     <div class="grid">`;
   CONFIG.equipes.forEach(t => {
     const v = cs[t.id] || {};
-    const val = v.out ? 'out' : (v.pos ? String(v.pos) : '');
+    const val = v.wo ? 'wo' : (v.out ? 'out' : (v.pos ? String(v.pos) : ''));
     const dup = v.pos && used[v.pos] > 1;
-    let opts = `<option value="">—</option><option value="out" ${val==='out'?'selected':''}>Não participa</option>`;
+    let opts = `<option value="">—</option><option value="out" ${val==='out'?'selected':''}>Não participa</option><option value="wo" ${val==='wo'?'selected':''}>W.O. (não pontua)</option>`;
     for(let i=1;i<=CONFIG.pontos.length;i++) opts += `<option value="${i}" ${val===String(i)?'selected':''}>${i}º</option>`;
     h += `<div class="item ${dup?'dup':''}"><span><b>${esc(t.nome)}</b> <span class="mut">${esc(t.sigla)}</span></span><select data-team="${t.id}">${opts}</select></div>`;
   });
@@ -268,6 +274,7 @@ function salvar(teamId, val){
   const ref = db.ref(`ranking/state/${curCat}/${teamId}`);
   if(val === ''){ ref.remove().catch(erroEscrita); return; }
   if(val === 'out'){ ref.set({out:true}).catch(erroEscrita); return; }
+  if(val === 'wo'){ ref.set({out:true, wo:true}).catch(erroEscrita); return; }
   const cs = state[curCat] || {};
   const clash = Object.keys(cs).find(id => id !== teamId && cs[id] && Number(cs[id].pos) === Number(val));
   if(clash){
@@ -277,6 +284,23 @@ function salvar(teamId, val){
   ref.set({pos:Number(val)}).catch(erroEscrita);
 }
 function erroEscrita(e){ alert('Não foi possível salvar. Verifique a conexão e se você está logado.'); console.error(e); renderLanc(); }
+
+function renderSaldos(){
+  let h = `<div class="card"><h2>Saldos para desempate</h2>
+    <p class="mut">Critérios 4 a 6 do desempate (Regulamento 9.3). Informe o saldo acumulado de cada federação no campeonato (pode ser negativo). Só influencia o ranking quando há empate nos critérios anteriores.</p>
+    <div class="scroll"><table><thead><tr><th class="l">Equipe</th><th>Saldo de jogos</th><th>Saldo de sets</th><th>Saldo de games</th></tr></thead><tbody>`;
+  CONFIG.equipes.forEach(t => {
+    const s = saldos[t.id] || {};
+    h += `<tr><td class="l"><b>${esc(t.nome)}</b> <span class="mut">${esc(t.sigla)}</span></td>` +
+      ['j','s','g'].map(k => `<td><input type="number" step="1" data-t="${t.id}" data-k="${k}" value="${s[k]!=null?esc(s[k]):''}" style="width:90px"></td>`).join('') + `</tr>`;
+  });
+  h += `</tbody></table></div></div>`;
+  $('#v-saldos').innerHTML = h;
+  $('#v-saldos').querySelectorAll('input').forEach(i => i.onchange = () => {
+    const v = i.value === '' ? null : Number(i.value);
+    db.ref(`ranking/saldos/${i.dataset.t}/${i.dataset.k}`).set(v).catch(erroEscrita);
+  });
+}
 
 function renderAdj(){
   const list = Object.entries(adj).sort((a,b) => (b[1].ts||0)-(a[1].ts||0));
@@ -311,11 +335,11 @@ function renderBkp(){
     <div class="row"><button id="bJson">Baixar backup (JSON)</button><button class="sec" id="bCsv">Exportar ranking (CSV)</button></div>
     <div class="row"><label class="mut">Restaurar backup (substitui os dados atuais):</label><input type="file" id="bFile" accept=".json"></div>
     <p class="mut">Baixe um backup ao fim de cada dia de competição e ao encerrar o campeonato.</p></div>`;
-  $('#bJson').onclick = () => baixar(`backup_brasileiro_cbbt_2026_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify({ranking:{state, adj}}, null, 2), 'application/json');
+  $('#bJson').onclick = () => baixar(`backup_brasileiro_cbbt_2026_${new Date().toISOString().slice(0,10)}.json`, JSON.stringify({ranking:{state, adj, saldos}}, null, 2), 'application/json');
   $('#bCsv').onclick = () => {
-    const rk = calcular(CONFIG, state, adj);
-    const head = ['Posição','Equipe','Sigla','Pontos','Bônus/Penalidade','Base','1º','2º','3º'].concat(CONFIG.categorias.map(c=>c.nome));
-    const rows = rk.map(r => [r.rank, r.t.nome, r.t.sigla, r.total, r.adj, r.base, r.c[0], r.c[1], r.c[2]].concat(CONFIG.categorias.map(c => r.cats[c.id]||'')));
+    const rk = calcular(CONFIG, state, adj, saldos);
+    const head = ['Posição','Equipe','Sigla','Pontos','Bônus/Penalidade','Base','1º','2º','3º','Saldo jogos','Saldo sets','Saldo games'].concat(CONFIG.categorias.map(c=>c.nome));
+    const rows = rk.map(r => [r.rank, r.t.nome, r.t.sigla, r.total, r.adj, r.base, r.c[0], r.c[1], r.c[2], r.sj, r.ss, r.sg].concat(CONFIG.categorias.map(c => r.cats[c.id]||'')));
     const csv = [head].concat(rows).map(l => l.map(x => `"${String(x).replace(/"/g,'""')}"`).join(';')).join('\n');
     baixar('ranking_brasileiro_cbbt_2026.csv', '\ufeff'+csv, 'text/csv');
   };
@@ -327,7 +351,7 @@ function renderBkp(){
         const j = JSON.parse(rd.result);
         const r = j.ranking || j;
         if(!confirm('Isto substitui TODOS os dados atuais pelo backup. Continuar?')) return;
-        db.ref('ranking').set({state: r.state || {}, adj: r.adj || {}}).then(() => alert('Backup restaurado.')).catch(erroEscrita);
+        db.ref('ranking').set({state: r.state || {}, adj: r.adj || {}, saldos: r.saldos || {}}).then(() => alert('Backup restaurado.')).catch(erroEscrita);
       }catch(err){ alert('Arquivo inválido.'); }
     };
     rd.readAsText(f);
@@ -340,12 +364,12 @@ function baixar(nome, txt, tipo){
 }
 
 function render(){
-  if(!user && ['lanc','adj','bkp'].includes(curTab)) curTab = 'ranking';
+  if(!user && ['lanc','saldos','adj','bkp'].includes(curTab)) curTab = 'ranking';
   renderTabs(); renderAuth();
-  ['ranking','lanc','adj','bkp'].forEach(k => $('#v-'+k).classList.add('hidden'));
+  ['ranking','lanc','saldos','adj','bkp'].forEach(k => $('#v-'+k).classList.add('hidden'));
   if(curTab === 'ranking'){ $('#v-ranking').classList.remove('hidden'); renderRanking(); }
   else if(curTab === 'quadro'){ $('#v-ranking').classList.remove('hidden'); renderQuadro(); }
-  else { $('#v-'+curTab).classList.remove('hidden'); ({lanc:renderLanc, adj:renderAdj, bkp:renderBkp})[curTab](); }
+  else { $('#v-'+curTab).classList.remove('hidden'); ({lanc:renderLanc, saldos:renderSaldos, adj:renderAdj, bkp:renderBkp})[curTab](); }
 }
 
 function init(){
@@ -358,7 +382,7 @@ function init(){
   });
   db.ref('ranking').on('value', s => {
     const v = s.val() || {};
-    state = v.state || {}; adj = v.adj || {};
+    state = v.state || {}; adj = v.adj || {}; saldos = v.saldos || {};
     render();
   }, err => { $('#conn').textContent = 'erro de leitura'; console.error(err); });
   auth.onAuthStateChanged(u => { user = u; render(); });
