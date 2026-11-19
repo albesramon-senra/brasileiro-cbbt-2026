@@ -344,7 +344,16 @@ function salvar(teamId, val){
 function erroEscrita(e){ alert('Não foi possível salvar. Verifique a conexão e se você está logado.'); console.error(e); renderLanc(); }
 
 let pSel = {}, pA = '', pB = '', pCatSel = null;
-const PRESETS = [['Semifinalistas · 1º–4º', 1, 4], ['Consolação · 5º–8º', 5, 8], ['Demais · 9º–último', 9, 0]];
+const PRESETS = [
+  ['Semifinalistas · 1º–4º', 1, 4], ['Consolação · 5º–8º', 5, 8], ['Demais · 9º–último', 9, 0],
+  ['Finalistas · 1º–2º', 1, 2], ['Disputa de 3º · 3º–4º', 3, 4], ['Disputa de 5º · 5º–6º', 5, 6], ['Disputa de 7º · 7º–8º', 7, 8],
+  ['9º–10º', 9, 10], ['11º–12º', 11, 12], ['13º–14º', 13, 14]
+];
+const PRESET_GRUPOS = [
+  ['1ª parcial — antes do 1º confronto', [0, 1, 2]],
+  ['2ª parcial — depois do 1º confronto (substitui a faixa anterior)', [3, 4, 5, 6]],
+  ['Pares nas posições mais baixas', [7, 8, 9]]
+];
 
 function idsMarcados(){ return Object.keys(pSel).filter(k => pSel[k]); }
 
@@ -386,12 +395,12 @@ function renderParcial(){
   const nCat = (CONFIG.categorias.find(c => c.id === curCat) || {}).nome || '';
 
   let h = `<div class="card"><h2>Parcial — faixas por grupo</h2>
-    <p class="mut">Equipes que ainda disputam as mesmas posições ficam na <b>mesma faixa</b>, sem favoritismo. Ex.: as 4 semifinalistas ficam todas em 1º–4º; as perdedoras das quartas em 5º–8º. Quando o resultado oficial for lançado em <b>Lançamentos</b>, a faixa da equipe deixa de valer sozinha.</p>
+    <p class="mut">Equipes que ainda disputam as mesmas posições ficam na <b>mesma faixa</b>, sem favoritismo. Ex.: antes do 1º confronto, as 4 semifinalistas ficam em 1º–4º. Depois dele, os 2 finalistas passam para 1º–2º e os 2 da disputa de 3º para 3º–4º. A faixa nova <b>substitui</b> a anterior da equipe. Quando o resultado oficial for lançado em <b>Lançamentos</b>, a faixa deixa de valer sozinha.</p>
     <div class="row"><label>Categoria:</label><select id="pCat">${CONFIG.categorias.map(c=>`<option value="${c.id}" ${c.id===curCat?'selected':''}>${esc(c.nome)}</option>`).join('')}</select>
     <button class="del" id="pLimpar">Limpar faixas desta categoria</button></div></div>`;
 
   h += `<div class="card"><h2>1. Escolha a faixa</h2>
-    <div class="row">${PRESETS.map((p,i) => `<button class="sec" data-preset="${i}">${esc(p[0])}</button>`).join('')}</div>
+    ${PRESET_GRUPOS.map(g => `<div class="mut" style="margin-top:8px">${esc(g[0])}</div><div class="row">${g[1].map(i => `<button class="sec" data-preset="${i}">${esc(PRESETS[i][0])}</button>`).join('')}</div>`).join('')}
     <div class="row"><span>ou personalize: de</span><select id="pA">${opts(pA)}</select><span>até</span><select id="pB">${opts(pB)}</select></div>
     <h2 style="margin-top:14px">2. Marque as equipes dessa faixa</h2>
     <div class="row"><button class="sec" id="pSem">Marcar as sem faixa</button><button class="sec" id="pDes">Desmarcar todas</button></div>
