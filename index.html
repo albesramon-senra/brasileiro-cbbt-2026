@@ -1,4 +1,3 @@
-
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -344,42 +343,105 @@ function salvar(teamId, val){
 }
 function erroEscrita(e){ alert('Não foi possível salvar. Verifique a conexão e se você está logado.'); console.error(e); renderLanc(); }
 
+let pSel = {}, pA = '', pB = '', pCatSel = null;
+const PRESETS = [['Semifinalistas · 1º–4º', 1, 4], ['Consolação · 5º–8º', 5, 8], ['Demais · 9º–último', 9, 0]];
+
+function idsMarcados(){ return Object.keys(pSel).filter(k => pSel[k]); }
+
+function aplicarFaixa(){
+  const ids = idsMarcados();
+  if(!ids.length){ alert('Marque pelo menos uma equipe.'); return; }
+  if(!pA || !pB){ alert('Escolha a faixa: de … até ….'); return; }
+  const a = Number(pA), b = Number(pB);
+  if(a > b){ alert('A melhor colocação não pode ser maior que a pior.'); return; }
+  const cs = state[curCat] || {};
+  let livres = 0;
+  for(let p = a; p <= b; p++){ if(!Object.values(cs).some(v => v && !v.out && Number(v.pos) === p)) livres++; }
+  if(ids.length > livres && !confirm(`A faixa ${a}º–${b}º tem ${livres} posição(ões) livre(s), mas você marcou ${ids.length} equipes. Aplicar mesmo assim?`)) return;
+  const upd = {};
+  ids.forEach(id => upd[id] = {a, b});
+  pSel = {};
+  db.ref(`ranking/parcial/${curCat}`).update(upd).catch(erroEscrita);
+}
+
+function removerFaixa(){
+  const ids = idsMarcados();
+  if(!ids.length){ alert('Marque pelo menos uma equipe.'); return; }
+  const upd = {};
+  ids.forEach(id => upd[id] = null);
+  pSel = {};
+  db.ref(`ranking/parcial/${curCat}`).update(upd).catch(erroEscrita);
+}
+
 function renderParcial(){
+  if(pCatSel !== curCat){ pSel = {}; pCatSel = curCat; }
   const cs = state[curCat] || {};
   const pc = parcial[curCat] || {};
   const N = CONFIG.pontos.length;
   const opts = sel => `<option value="">—</option>` + Array.from({length:N}, (_,i) => `<option value="${i+1}" ${String(sel)===String(i+1)?'selected':''}>${i+1}º</option>`).join('');
-  let h = `<div class="card"><h2>Parcial — faixa de posições</h2>
-    <p class="mut">Use enquanto a categoria não terminou. Para cada equipe, informe a <b>melhor</b> e a <b>pior</b> colocação que ela ainda pode alcançar. Quando você lançar a colocação definitiva em <b>Lançamentos</b>, a faixa deixa de valer sozinha.</p>
+  const aberto = t => { const v = cs[t.id]; return !(v && (v.out || v.pos)); };
+  const abertas = CONFIG.equipes.filter(aberto);
+  const defin = CONFIG.equipes.filter(t => !aberto(t));
+  const faixaDe = t => { const f = pc[t.id]; return (f && f.a && f.b) ? f : null; };
+  const nCat = (CONFIG.categorias.find(c => c.id === curCat) || {}).nome || '';
+
+  let h = `<div class="card"><h2>Parcial — faixas por grupo</h2>
+    <p class="mut">Equipes que ainda disputam as mesmas posições ficam na <b>mesma faixa</b>, sem favoritismo. Ex.: as 4 semifinalistas ficam todas em 1º–4º; as perdedoras das quartas em 5º–8º. Quando o resultado oficial for lançado em <b>Lançamentos</b>, a faixa da equipe deixa de valer sozinha.</p>
     <div class="row"><label>Categoria:</label><select id="pCat">${CONFIG.categorias.map(c=>`<option value="${c.id}" ${c.id===curCat?'selected':''}>${esc(c.nome)}</option>`).join('')}</select>
-    <button class="del" id="pLimpar">Limpar faixas desta categoria</button></div><div class="grid">`;
-  CONFIG.equipes.forEach(t => {
-    const v = cs[t.id];
-    const f = pc[t.id] || {};
-    if(v && (v.out || v.pos)){
-      const txt = v.wo ? 'W.O.' : (v.out ? 'Não participa' : `Definitivo: ${v.pos}º`);
-      h += `<div class="item"><span><b>${esc(t.nome)}</b> <span class="mut">${esc(t.sigla)}</span></span><span class="mut">${txt}</span></div>`;
-    } else {
-      h += `<div class="item" data-team="${t.id}"><span><b>${esc(t.nome)}</b> <span class="mut">${esc(t.sigla)}</span></span>
-        <span>de <select data-k="a">${opts(f.a)}</select> até <select data-k="b">${opts(f.b)}</select></span></div>`;
-    }
+    <button class="del" id="pLimpar">Limpar faixas desta categoria</button></div></div>`;
+
+  h += `<div class="card"><h2>1. Escolha a faixa</h2>
+    <div class="row">${PRESETS.map((p,i) => `<button class="sec" data-preset="${i}">${esc(p[0])}</button>`).join('')}</div>
+    <div class="row"><span>ou personalize: de</span><select id="pA">${opts(pA)}</select><span>até</span><select id="pB">${opts(pB)}</select></div>
+    <h2 style="margin-top:14px">2. Marque as equipes dessa faixa</h2>
+    <div class="row"><button class="sec" id="pSem">Marcar as sem faixa</button><button class="sec" id="pDes">Desmarcar todas</button></div>
+    <div class="grid">`;
+  abertas.forEach(t => {
+    const f = faixaDe(t);
+    h += `<label class="item" style="cursor:pointer"><span><b>${esc(t.nome)}</b> <span class="mut">${esc(t.sigla)}</span><br><span class="mut">${f ? `faixa atual: ${f.a}º–${f.b}º` : 'sem faixa'}</span></span>
+      <input type="checkbox" data-t="${t.id}" ${pSel[t.id] ? 'checked' : ''} style="width:24px;height:24px"></label>`;
   });
-  h += `</div><p class="mut">Sem faixa informada, a equipe soma 0 nos pontos garantidos e a melhor colocação ainda livre nos pontos máximos.</p></div>`;
+  if(!abertas.length) h += `<div class="mut">Todas as equipes desta categoria já têm resultado oficial.</div>`;
+  h += `</div>
+    <div class="row" style="margin-top:12px"><button id="pAplicar">Aplicar faixa às marcadas</button><button class="del" id="pRemover">Remover faixa das marcadas</button></div></div>`;
+
+  // resumo agrupado
+  const grupos = {};
+  abertas.forEach(t => { const f = faixaDe(t); const k = f ? `${f.a}-${f.b}` : 'x'; (grupos[k] = grupos[k] || []).push(t); });
+  const chaves = Object.keys(grupos).filter(k => k !== 'x').sort((x, y) => {
+    const [xa, xb] = x.split('-').map(Number), [ya, yb] = y.split('-').map(Number);
+    return xa - ya || xb - yb;
+  });
+  const nomes = ts => ts.map(t => esc(t.nome)).join(', ');
+  h += `<div class="card"><h2>Situação — ${esc(nCat)}</h2><div class="scroll"><table><thead><tr><th class="l">Faixa</th><th class="l">Equipes</th></tr></thead><tbody>`;
+  const dd = defin.slice().sort((a, b) => ((cs[a.id].pos || 99) - (cs[b.id].pos || 99)));
+  if(dd.length) h += `<tr><td class="l"><b>Definitivo</b></td><td class="l" style="white-space:normal">${dd.map(t => { const v = cs[t.id]; return `${esc(t.nome)} (${v.wo ? 'W.O.' : (v.out ? 'não participa' : v.pos + 'º')})`; }).join(', ')}</td></tr>`;
+  chaves.forEach(k => {
+    const [a, b] = k.split('-');
+    h += `<tr><td class="l"><b>${a}º–${b}º</b></td><td class="l" style="white-space:normal">${nomes(grupos[k])}</td></tr>`;
+  });
+  if(grupos.x) h += `<tr><td class="l"><b>Sem faixa</b></td><td class="l" style="white-space:normal">${nomes(grupos.x)}</td></tr>`;
+  if(!dd.length && !chaves.length && !grupos.x) h += `<tr><td colspan="2" class="mut">Sem equipes.</td></tr>`;
+  h += `</tbody></table></div>
+    <p class="mut">Sem faixa, a equipe soma 0 nos pontos garantidos e a melhor posição ainda livre nos pontos máximos.</p></div>`;
+
   $('#v-parcial').innerHTML = h;
   $('#pCat').onchange = e => { curCat = e.target.value; renderParcial(); };
   $('#pLimpar').onclick = () => {
-    const cat = CONFIG.categorias.find(c => c.id === curCat);
-    if(confirm(`Apagar todas as faixas da categoria ${cat.nome}?`)) db.ref(`ranking/parcial/${curCat}`).remove().catch(erroEscrita);
+    if(confirm(`Apagar todas as faixas da categoria ${nCat}?`)) db.ref(`ranking/parcial/${curCat}`).remove().catch(erroEscrita);
   };
-  $('#v-parcial').querySelectorAll('.item[data-team] select').forEach(s => s.onchange = () => {
-    const it = s.closest('.item'), id = it.dataset.team;
-    const a = it.querySelector('[data-k=a]').value, b = it.querySelector('[data-k=b]').value;
-    const ref = db.ref(`ranking/parcial/${curCat}/${id}`);
-    if(!a && !b){ ref.remove().catch(erroEscrita); return; }
-    if(!a || !b) return;
-    if(Number(a) > Number(b)){ alert('A melhor colocação não pode ser maior que a pior.'); renderParcial(); return; }
-    ref.set({a:Number(a), b:Number(b)}).catch(erroEscrita);
+  $('#pA').onchange = e => { pA = e.target.value; };
+  $('#pB').onchange = e => { pB = e.target.value; };
+  $('#v-parcial').querySelectorAll('[data-preset]').forEach(b => b.onclick = () => {
+    const p = PRESETS[b.dataset.preset];
+    pA = String(p[1]); pB = String(p[2] || N);
+    renderParcial();
   });
+  $('#v-parcial').querySelectorAll('input[data-t]').forEach(i => i.onchange = () => { pSel[i.dataset.t] = i.checked; });
+  $('#pSem').onclick = () => { pSel = {}; abertas.forEach(t => { if(!faixaDe(t)) pSel[t.id] = true; }); renderParcial(); };
+  $('#pDes').onclick = () => { pSel = {}; renderParcial(); };
+  $('#pAplicar').onclick = aplicarFaixa;
+  $('#pRemover').onclick = removerFaixa;
 }
 
 function renderSaldos(){
